@@ -54,6 +54,26 @@ GET_GROUP_LIST = {
     "parameters": {"type": "object", "properties": {}},
 }
 
+GET_GROUP_HISTORY = {
+    "name": "napcat_get_group_history",
+    "description": (
+        "Fetch recent chat history of a QQ group on demand. Use this when the "
+        "user asks what the group has been talking about - the bot does NOT "
+        "passively read group chat, it only pulls history when asked."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "group_id": {"type": "integer", "description": "Group id."},
+            "count": {
+                "type": "integer",
+                "description": "Number of recent messages to fetch (default 20, max 100).",
+            },
+        },
+        "required": ["group_id"],
+    },
+}
+
 GET_GROUP_MEMBER_INFO = {
     "name": "napcat_get_group_member_info",
     "description": "Get a member's info (nickname, card, role, title) in a QQ group.",
@@ -113,6 +133,7 @@ ALL = [
     SEND_MESSAGE,
     SEND_FILE,
     GET_GROUP_LIST,
+    GET_GROUP_HISTORY,
     GET_GROUP_MEMBER_INFO,
     GROUP_MUTE,
     GROUP_KICK,

@@ -18,10 +18,10 @@ from pathlib import Path
 from typing import Any, Callable, Coroutine, Optional
 
 try:  # loaded as a package (pip install)
-    from .adapter import cq_to_segments, file_param, parse_chat_id
+    from .adapter import cq_to_segments, extract_text, file_param, parse_chat_id
     from .onebot import OneBotClient, OneBotError
 except ImportError:  # loaded as a directory plugin
-    from adapter import cq_to_segments, file_param, parse_chat_id
+    from adapter import cq_to_segments, extract_text, file_param, parse_chat_id
     from onebot import OneBotClient, OneBotError
 
 logger = logging.getLogger("hermes.napcat.tools")
@@ -160,6 +160,38 @@ def get_group_list(args: dict, **kwargs) -> str:
     return _sync_call(run)
 
 
+def get_group_history(args: dict, **kwargs) -> str:
+    group_id = args.get("group_id")
+    if group_id is None:
+        return _err("'group_id' is required")
+    count = max(1, min(int(args.get("count", 20) or 20), 100))
+
+    async def run() -> list:
+        data = await _client.call(
+            "get_group_msg_history",
+            {"group_id": int(group_id), "count": count},
+            timeout=60,
+        )
+        messages = data.get("messages") if isinstance(data, dict) else data
+        if not isinstance(messages, list):
+            return {"raw": data}
+        self_id = _client.self_id
+        out = []
+        for m in messages[-count:]:
+            if not isinstance(m, dict):
+                continue
+            sender = m.get("sender") or {}
+            text, _, _ = extract_text(self_id, m.get("message"), m.get("raw_message"))
+            out.append({
+                "time": m.get("time"),
+                "sender": sender.get("card") or sender.get("nickname") or m.get("user_id"),
+                "text": text,
+            })
+        return out
+
+    return _sync_call(run)
+
+
 def get_group_member_info(args: dict, **kwargs) -> str:
     group_id, user_id = args.get("group_id"), args.get("user_id")
     if group_id is None or user_id is None:
@@ -214,6 +246,7 @@ HANDLERS = {
     "napcat_send_message": send_message,
     "napcat_send_file": send_file,
     "napcat_get_group_list": get_group_list,
+    "napcat_get_group_history": get_group_history,
     "napcat_get_group_member_info": get_group_member_info,
     "napcat_group_mute": group_mute,
     "napcat_group_kick": group_kick,

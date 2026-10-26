@@ -28,6 +28,7 @@ provides_tools:
   - napcat_send_message
   - napcat_send_file
   - napcat_get_group_list
+  - napcat_get_group_history
   - napcat_get_group_member_info
   - napcat_group_mute
   - napcat_group_kick
