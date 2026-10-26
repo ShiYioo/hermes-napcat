@@ -15,8 +15,12 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
-from onebot import OneBotClient, OneBotError
-from adapter import parse_chat_id
+try:  # loaded as a package (pip install)
+    from .adapter import parse_chat_id
+    from .onebot import OneBotClient, OneBotError
+except ImportError:  # loaded as a directory plugin
+    from adapter import parse_chat_id
+    from onebot import OneBotClient, OneBotError
 
 logger = logging.getLogger("hermes.napcat.tools")
 

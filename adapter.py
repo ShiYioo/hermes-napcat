@@ -17,7 +17,6 @@ environment variables (``NAPCAT_*``) as fallback, matching other adapters.
 
 from __future__ import annotations
 
-import asyncio
 import datetime
 import logging
 import os
@@ -29,7 +28,10 @@ from gateway.platforms.base import BasePlatformAdapter, Platform, SendResult
 from gateway.platforms.event import MessageEvent, MessageType
 from gateway.config import PlatformConfig
 
-from onebot import OneBotClient, OneBotError
+try:  # loaded as a package (pip install)
+    from .onebot import OneBotClient, OneBotError
+except ImportError:  # loaded as a directory plugin
+    from onebot import OneBotClient, OneBotError
 
 logger = logging.getLogger("hermes.napcat.adapter")
 

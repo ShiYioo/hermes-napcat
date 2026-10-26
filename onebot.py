@@ -138,7 +138,11 @@ class OneBotClient:
             # NapCat accepts either scheme; Bearer is the OneBot v11 standard.
             headers["Authorization"] = f"Bearer {self.token}"
         logger.info("Connecting to NapCat at %s", self.ws_url)
-        self._ws = await self._session.ws_connect(self.ws_url, headers=headers, max_msg_size=0)
+        # 64 MiB cap: large enough for big forwarded-message events, but not
+        # unlimited (see the review criticism of NousResearch/hermes-agent#17917).
+        self._ws = await self._session.ws_connect(
+            self.ws_url, headers=headers, max_msg_size=64 * 1024 * 1024
+        )
         self._connected.set()
         self._backoff = _BACKOFF_MIN
         logger.info("NapCat WebSocket connected")

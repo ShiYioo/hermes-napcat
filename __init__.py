@@ -14,9 +14,13 @@ import logging
 import os
 from typing import Optional
 
-import schemas
-import tools
-from adapter import NapCatPlatformAdapter
+try:  # loaded as a package (pip install)
+    from . import schemas, tools
+    from .adapter import NapCatPlatformAdapter
+except ImportError:  # loaded as a directory plugin
+    import schemas
+    import tools
+    from adapter import NapCatPlatformAdapter
 
 logger = logging.getLogger("hermes.napcat")
 
@@ -97,8 +101,6 @@ def register(ctx) -> None:
         max_message_length=4500,
         emoji="🐧",
         pii_safe=False,
-        help="NapCat QQ adapter. Configure via NAPCAT_WS_URL/NAPCAT_TOKEN. "
-        "Chat ids: QQ number (private) or g<group_id> (group).",
         platform_hint=(
             "You are chatting over QQ via NapCat (OneBot v11). Keep replies "
             "concise; QQ friends and groups have message-length limits. The "
