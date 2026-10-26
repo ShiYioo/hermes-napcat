@@ -18,10 +18,10 @@ from pathlib import Path
 from typing import Any, Callable, Coroutine, Optional
 
 try:  # loaded as a package (pip install)
-    from .adapter import cq_to_segments, parse_chat_id
+    from .adapter import cq_to_segments, file_param, parse_chat_id
     from .onebot import OneBotClient, OneBotError
 except ImportError:  # loaded as a directory plugin
-    from adapter import cq_to_segments, parse_chat_id
+    from adapter import cq_to_segments, file_param, parse_chat_id
     from onebot import OneBotClient, OneBotError
 
 logger = logging.getLogger("hermes.napcat.tools")
@@ -128,8 +128,9 @@ def send_file(args: dict, **kwargs) -> str:
     async def run() -> dict:
         message_type, numeric_id = parse_chat_id(target)
         params: dict[str, Any] = {
-            # plain absolute path — the most portable form for NapCat's file param
-            "file": str(path.resolve()),
+            # inline base64: NapCat runs in another container and cannot read
+            # Hermes-side paths (bare paths fail with NapCat error 1200)
+            "file": file_param(path),
             "name": str(file_name or path.name),
         }
         if message_type == "group":

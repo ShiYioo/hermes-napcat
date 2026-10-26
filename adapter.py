@@ -102,6 +102,19 @@ def cq_to_segments(content: str) -> list[dict]:
     return segments or [{"type": "text", "data": {"text": ""}}]
 
 
+def file_param(path: Path) -> str:
+    """Encode a local file as NapCat's ``base64://`` file parameter.
+
+    Hermes and NapCat usually run in separate containers, so NapCat cannot
+    resolve paths from the Hermes filesystem (bare paths fail with NapCat
+    error 1200 '识别URL失败', and file:// URIs are likewise unreachable).
+    Inlining the bytes via base64 works everywhere at the cost of ~33%
+    transport overhead; keep files reasonable (<50 MB) or share a volume.
+    """
+    import base64
+    return "base64://" + base64.b64encode(path.read_bytes()).decode("ascii")
+
+
 def _chat_id_for(message_type: str, raw_id: Any) -> str:
     chat_id = str(raw_id)
     if message_type == "group":
@@ -364,10 +377,10 @@ class NapCatPlatformAdapter(BasePlatformAdapter):
     ) -> None:
         """Cron/standalone sender: text plus optional local files.
 
-        Files are delivered via ``upload_group_file`` / ``upload_private_file``
-        with a plain absolute path (the most portable form of NapCat's file
-        parameter). NapCat must be able to resolve the path: when it runs in a
-        separate container, mount the shared directory into it as well.
+        Files are delivered inline as ``base64://`` payloads via
+        ``upload_group_file`` / ``upload_private_file`` — the only form that
+        works when Hermes and NapCat run in separate containers without a
+        shared volume (bare paths fail with NapCat error 1200).
         """
         if content:
             result = await self.send(chat_id, content)
@@ -376,18 +389,21 @@ class NapCatPlatformAdapter(BasePlatformAdapter):
         message_type, numeric_id = parse_chat_id(chat_id)
         for file_path in media_files or []:
             path = Path(file_path).expanduser().resolve()
+            if not path.is_file():
+                logger.error("standalone_send file %s not found; skipping", path)
+                continue
             try:
                 if message_type == "group":
                     await self.client.call(
                         "upload_group_file",
-                        {"group_id": numeric_id, "file": str(path), "name": path.name},
-                        timeout=180,
+                        {"group_id": numeric_id, "file": file_param(path), "name": path.name},
+                        timeout=300,
                     )
                 else:
                     await self.client.call(
                         "upload_private_file",
-                        {"user_id": numeric_id, "file": str(path), "name": path.name},
-                        timeout=180,
+                        {"user_id": numeric_id, "file": file_param(path), "name": path.name},
+                        timeout=300,
                     )
             except (OneBotError, ConnectionError, TimeoutError) as exc:
                 logger.error("standalone_send file %s to %s failed: %s", path, chat_id, exc)
