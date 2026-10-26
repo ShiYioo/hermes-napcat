@@ -65,6 +65,7 @@ class OneBotClient:
         self._stopped = asyncio.Event()
         self._connected = asyncio.Event()
         self._backoff = _BACKOFF_MIN
+        self.loop: Optional[asyncio.AbstractEventLoop] = None  # for sync tool bridging
 
     # ---------------------------------------------------------------- state
 
@@ -83,6 +84,7 @@ class OneBotClient:
     # ------------------------------------------------------------ lifecycle
 
     async def start(self) -> None:
+        self.loop = asyncio.get_running_loop()
         self._stopped.clear()
         self._tasks.append(asyncio.create_task(self._run(), name="napcat-ws-run"))
 

@@ -1,19 +1,21 @@
 """Handlers for the napcat toolset.
 
-Each handler is an async ``fn(args: dict, **kwargs) -> str`` returning a JSON
-string (errors included), as required by the Hermes plugin tool contract.
-
-The tools talk to NapCat through the OneBotClient owned by the platform
-adapter; the adapter publishes it here on startup (``set_client``) and clears
-it on shutdown.
+Hermes invokes tool handlers as plain sync functions ``fn(args: dict, **kwargs)
+-> str`` returning a JSON string (errors included). Our transport is async
+(aiohttp WebSocket on the gateway event loop), so each sync handler bridges to
+that loop with ``run_coroutine_threadsafe`` — run from a short-lived thread so
+it is safe regardless of whether the dispatcher calls us from the loop thread
+or from a worker thread.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import threading
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Coroutine, Optional
 
 try:  # loaded as a package (pip install)
     from .adapter import parse_chat_id
@@ -23,6 +25,8 @@ except ImportError:  # loaded as a directory plugin
     from onebot import OneBotClient, OneBotError
 
 logger = logging.getLogger("hermes.napcat.tools")
+
+TOOL_TIMEOUT = 120.0
 
 _client: Optional[OneBotClient] = None
 
@@ -50,41 +54,69 @@ def _client_or_error() -> tuple[Optional[OneBotClient], Optional[str]]:
     return _client, None
 
 
-# --------------------------------------------------------------- handlers
+def _sync_call(coro_factory: Callable[[], Coroutine]) -> str:
+    """Run an async transport call from sync handler context.
 
-
-async def send_message(args: dict, **kwargs) -> str:
+    Schedules the coroutine on the gateway event loop from a temporary thread
+    and blocks for the result. Using a thread keeps this safe even when the
+    tool dispatcher invokes the handler from the loop thread itself.
+    """
     client, err = _client_or_error()
     if err:
         return _err(err)
+    loop = client.loop
+    if loop is None:
+        return _err("napcat event loop reference missing (adapter not started)")
+
+    outcome: dict[str, Any] = {}
+
+    def runner() -> None:
+        future = asyncio.run_coroutine_threadsafe(coro_factory(), loop)
+        try:
+            outcome["value"] = future.result(TOOL_TIMEOUT)
+        except Exception as exc:  # noqa: BLE001 - report as tool error JSON
+            outcome["error"] = exc
+
+    thread = threading.Thread(target=runner, name="napcat-tool-call", daemon=True)
+    thread.start()
+    thread.join(TOOL_TIMEOUT + 10)
+    if "error" in outcome:
+        return _err(str(outcome["error"]))
+    if "value" not in outcome:
+        return _err(f"tool call did not complete within {TOOL_TIMEOUT}s")
+    return _ok(outcome["value"])
+
+
+# --------------------------------------------------------------- handlers
+
+
+def send_message(args: dict, **kwargs) -> str:
     target = str(args.get("target", "")).strip()
     message = str(args.get("message", ""))
     if not target or not message:
         return _err("both 'target' and 'message' are required")
-    try:
+
+    async def run() -> dict:
         message_type, numeric_id = parse_chat_id(target)
-    except ValueError as exc:
-        return _err(f"invalid target '{target}': {exc}")
-    try:
         if message_type == "group":
-            data = await client.call(
+            data = await _client.call(
                 "send_group_msg",
                 {"group_id": numeric_id, "message": [{"type": "text", "data": {"text": message}}]},
             )
         else:
-            data = await client.call(
+            data = await _client.call(
                 "send_private_msg",
                 {"user_id": numeric_id, "message": [{"type": "text", "data": {"text": message}}]},
             )
-        return _ok({"message_id": (data or {}).get("message_id")})
-    except (OneBotError, ConnectionError, TimeoutError) as exc:
-        return _err(str(exc))
+        return {"message_id": (data or {}).get("message_id")}
+
+    try:
+        return _sync_call(run)
+    except ValueError as exc:
+        return _err(f"invalid target '{target}': {exc}")
 
 
-async def send_file(args: dict, **kwargs) -> str:
-    client, err = _client_or_error()
-    if err:
-        return _err(err)
+def send_file(args: dict, **kwargs) -> str:
     target = str(args.get("target", "")).strip()
     file_path = str(args.get("file_path", "")).strip()
     file_name = args.get("file_name")
@@ -93,85 +125,75 @@ async def send_file(args: dict, **kwargs) -> str:
     path = Path(file_path).expanduser()
     if not path.is_file():
         return _err(f"file not found: {path}")
-    try:
+
+    async def run() -> dict:
         message_type, numeric_id = parse_chat_id(target)
-    except ValueError as exc:
-        return _err(f"invalid target '{target}': {exc}")
-    params: dict[str, Any] = {
-        "file": path.resolve().as_uri(),
-        "name": str(file_name or path.name),
-    }
-    try:
+        params: dict[str, Any] = {
+            "file": path.resolve().as_uri(),
+            "name": str(file_name or path.name),
+        }
         if message_type == "group":
             params["group_id"] = numeric_id
-            await client.call("upload_group_file", params, timeout=300)
+            await _client.call("upload_group_file", params, timeout=TOOL_TIMEOUT)
         else:
             params["user_id"] = numeric_id
-            await client.call("upload_private_file", params, timeout=300)
-        return _ok({"sent": str(path), "target": target})
-    except (OneBotError, ConnectionError, TimeoutError) as exc:
-        return _err(str(exc))
+            await _client.call("upload_private_file", params, timeout=TOOL_TIMEOUT)
+        return {"sent": str(path), "target": target}
 
-
-async def get_group_list(args: dict, **kwargs) -> str:
-    client, err = _client_or_error()
-    if err:
-        return _err(err)
     try:
-        groups = await client.call("get_group_list", {"no_cache": False})
-        summary = [
+        return _sync_call(run)
+    except ValueError as exc:
+        return _err(f"invalid target '{target}': {exc}")
+
+
+def get_group_list(args: dict, **kwargs) -> str:
+    async def run() -> list:
+        groups = await _client.call("get_group_list", {"no_cache": False})
+        return [
             {"group_id": g.get("group_id"), "name": g.get("group_name")} for g in groups or []
         ]
-        return _ok(summary)
-    except (OneBotError, ConnectionError, TimeoutError) as exc:
-        return _err(str(exc))
+
+    return _sync_call(run)
 
 
-async def get_group_member_info(args: dict, **kwargs) -> str:
-    client, err = _client_or_error()
-    if err:
-        return _err(err)
+def get_group_member_info(args: dict, **kwargs) -> str:
     group_id, user_id = args.get("group_id"), args.get("user_id")
     if group_id is None or user_id is None:
         return _err("'group_id' and 'user_id' are required")
-    try:
-        info = await client.call(
+
+    async def run() -> dict:
+        return await _client.call(
             "get_group_member_info",
             {"group_id": int(group_id), "user_id": int(user_id), "no_cache": False},
         )
-        return _ok(info)
-    except (OneBotError, ConnectionError, TimeoutError, ValueError) as exc:
-        return _err(str(exc))
+
+    return _sync_call(run)
 
 
-async def group_mute(args: dict, **kwargs) -> str:
-    client, err = _client_or_error()
-    if err:
-        return _err(err)
+def group_mute(args: dict, **kwargs) -> str:
     group_id, user_id = args.get("group_id"), args.get("user_id")
     duration = args.get("duration_seconds", 60)
     if group_id is None or user_id is None:
         return _err("'group_id', 'user_id' and 'duration_seconds' are required")
-    try:
-        duration = max(0, min(int(duration), 2592000))
-        await client.call(
+
+    async def run() -> dict:
+        seconds = max(0, min(int(duration), 2592000))
+        await _client.call(
             "set_group_ban",
-            {"group_id": int(group_id), "user_id": int(user_id), "duration": duration},
+            {"group_id": int(group_id), "user_id": int(user_id), "duration": seconds},
         )
-        return _ok({"muted": int(user_id), "group": int(group_id), "seconds": duration})
-    except (OneBotError, ConnectionError, TimeoutError, ValueError) as exc:
-        return _err(str(exc))
+        return {"muted": int(user_id), "group": int(group_id), "seconds": seconds}
+
+    return _sync_call(run)
 
 
-async def group_kick(args: dict, **kwargs) -> str:
-    client, err = _client_or_error()
-    if err:
-        return _err(err)
+def group_kick(args: dict, **kwargs) -> str:
     group_id, user_id = args.get("group_id"), args.get("user_id")
     if group_id is None or user_id is None:
         return _err("'group_id' and 'user_id' are required")
-    try:
-        await client.call(
+
+    async def run() -> dict:
+        await _client.call(
             "set_group_kick",
             {
                 "group_id": int(group_id),
@@ -179,9 +201,9 @@ async def group_kick(args: dict, **kwargs) -> str:
                 "reject_add_request": bool(args.get("reject_add_request", False)),
             },
         )
-        return _ok({"kicked": int(user_id), "group": int(group_id)})
-    except (OneBotError, ConnectionError, TimeoutError, ValueError) as exc:
-        return _err(str(exc))
+        return {"kicked": int(user_id), "group": int(group_id)}
+
+    return _sync_call(run)
 
 
 HANDLERS = {
