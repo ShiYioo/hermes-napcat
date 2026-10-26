@@ -98,14 +98,14 @@ def send_message(args: dict, **kwargs) -> str:
 
     async def run() -> dict:
         message_type, numeric_id = parse_chat_id(target)
-        message = cq_to_segments(message)  # honor embedded CQ codes (at/image/...)
+        segments = cq_to_segments(message)  # rename: don't shadow the closure var
         if message_type == "group":
             data = await _client.call(
-                "send_group_msg", {"group_id": numeric_id, "message": message}
+                "send_group_msg", {"group_id": numeric_id, "message": segments}
             )
         else:
             data = await _client.call(
-                "send_private_msg", {"user_id": numeric_id, "message": message}
+                "send_private_msg", {"user_id": numeric_id, "message": segments}
             )
         return {"message_id": (data or {}).get("message_id")}
 
