@@ -365,9 +365,9 @@ class NapCatPlatformAdapter(BasePlatformAdapter):
         """Cron/standalone sender: text plus optional local files.
 
         Files are delivered via ``upload_group_file`` / ``upload_private_file``
-        using NapCat's ``file://`` URI scheme. Note that NapCat must be able to
-        resolve the path: when NapCat runs in a separate container, mount the
-        shared directory into it as well.
+        with a plain absolute path (the most portable form of NapCat's file
+        parameter). NapCat must be able to resolve the path: when it runs in a
+        separate container, mount the shared directory into it as well.
         """
         if content:
             result = await self.send(chat_id, content)

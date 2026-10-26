@@ -84,6 +84,12 @@ class OneBotClient:
     # ------------------------------------------------------------ lifecycle
 
     async def start(self) -> None:
+        # Idempotent: the gateway may call connect() again on reconnect
+        # without a disconnect() in between — never spawn a second run loop
+        # (it would double every incoming event).
+        if any(not task.done() for task in self._tasks) and not self._stopped.is_set():
+            await self.wait_connected(0.001)
+            return
         self.loop = asyncio.get_running_loop()
         self._stopped.clear()
         self._tasks.append(asyncio.create_task(self._run(), name="napcat-ws-run"))
