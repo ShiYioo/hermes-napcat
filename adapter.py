@@ -62,6 +62,46 @@ def _parse_cq_params(raw: Optional[str]) -> dict:
     return params
 
 
+# CQ types that map to real outbound segments; anything else stays as text.
+_CQ_OUTBOUND_MAP = {
+    "at": lambda d: {"type": "at", "data": {"qq": d.get("qq", "")}},
+    "image": lambda d: {"type": "image", "data": {"file": d.get("file", "")}},
+    "record": lambda d: {"type": "record", "data": {"file": d.get("file", "")}},
+    "video": lambda d: {"type": "video", "data": {"file": d.get("file", "")}},
+    "face": lambda d: {"type": "face", "data": {"id": d.get("id", "")}},
+    "reply": lambda d: {"type": "reply", "data": {"id": d.get("id", "")}},
+}
+
+
+def cq_to_segments(content: str) -> list[dict]:
+    """Convert outbound text with embedded CQ codes to structured segments.
+
+    NapCat does not interpret ``[CQ:...]`` inside array-format text segments,
+    so an agent that writes ``[CQ:at,qq=123] hi`` would otherwise show the raw
+    code in QQ. Recognized codes become real segments; unknown types are kept
+    as literal text so nothing is silently dropped.
+    """
+    segments: list[dict] = []
+    pos = 0
+    for match in _CQ_CODE_RE.finditer(content):
+        if text := content[pos:match.start()]:
+            segments.append({"type": "text", "data": {"text": text}})
+        pos = match.end()
+        seg_type = match.group(1).lower()
+        params = _parse_cq_params(match.group(2))
+        builder = _CQ_OUTBOUND_MAP.get(seg_type)
+        if builder is None:
+            segments.append({"type": "text", "data": {"text": match.group(0)}})
+        else:
+            segment = builder(params)
+            if segment["data"]:
+                segments.append(segment)
+            # else: malformed code (e.g. [CQ:at] without qq) — drop silently
+    if text := content[pos:]:
+        segments.append({"type": "text", "data": {"text": text}})
+    return segments or [{"type": "text", "data": {"text": ""}}]
+
+
 def _chat_id_for(message_type: str, raw_id: Any) -> str:
     chat_id = str(raw_id)
     if message_type == "group":
@@ -268,7 +308,7 @@ class NapCatPlatformAdapter(BasePlatformAdapter):
         segments: list[dict] = []
         if reply_to:
             segments.append({"type": "reply", "data": {"id": str(reply_to)}})
-        segments.append({"type": "text", "data": {"text": content}})
+        segments.extend(cq_to_segments(content))
 
         try:
             if message_type == "group":

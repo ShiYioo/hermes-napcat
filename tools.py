@@ -18,10 +18,10 @@ from pathlib import Path
 from typing import Any, Callable, Coroutine, Optional
 
 try:  # loaded as a package (pip install)
-    from .adapter import parse_chat_id
+    from .adapter import cq_to_segments, parse_chat_id
     from .onebot import OneBotClient, OneBotError
 except ImportError:  # loaded as a directory plugin
-    from adapter import parse_chat_id
+    from adapter import cq_to_segments, parse_chat_id
     from onebot import OneBotClient, OneBotError
 
 logger = logging.getLogger("hermes.napcat.tools")
@@ -98,15 +98,14 @@ def send_message(args: dict, **kwargs) -> str:
 
     async def run() -> dict:
         message_type, numeric_id = parse_chat_id(target)
+        message = cq_to_segments(message)  # honor embedded CQ codes (at/image/...)
         if message_type == "group":
             data = await _client.call(
-                "send_group_msg",
-                {"group_id": numeric_id, "message": [{"type": "text", "data": {"text": message}}]},
+                "send_group_msg", {"group_id": numeric_id, "message": message}
             )
         else:
             data = await _client.call(
-                "send_private_msg",
-                {"user_id": numeric_id, "message": [{"type": "text", "data": {"text": message}}]},
+                "send_private_msg", {"user_id": numeric_id, "message": message}
             )
         return {"message_id": (data or {}).get("message_id")}
 
