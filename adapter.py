@@ -75,7 +75,7 @@ class NapCatPlatformAdapter(BasePlatformAdapter):
 
     # ------------------------------------------------------------ lifecycle
 
-    async def connect(self) -> bool:
+    async def connect(self, is_reconnect: bool = False) -> bool:
         await self.client.start()
         ok = await self.client.wait_connected(timeout=30)
         if not ok:
