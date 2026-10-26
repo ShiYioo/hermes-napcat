@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime
 import logging
 import os
+import re
 import uuid
 from pathlib import Path
 from typing import Any, Optional
@@ -36,6 +37,29 @@ except ImportError:  # loaded as a directory plugin
 logger = logging.getLogger("hermes.napcat.adapter")
 
 GROUP_PREFIX = "g"
+
+# OneBot 11 CQ code: [CQ:type,key=value,...]  (spec escapes: &amp; &#91; &#93; &comma;)
+_CQ_CODE_RE = re.compile(r"\[CQ:([a-zA-Z0-9_.-]+)((?:,[^,\]]*)*)\]")
+_CQ_UNESCAPES = {"&amp;": "&", "&#91;": "[", "&#93;": "]", "&comma;": ","}
+
+
+def _cq_unescape(value: str) -> str:
+    for escaped, char in _CQ_UNESCAPES.items():
+        value = value.replace(escaped, char)
+    return value
+
+
+def _parse_cq_params(raw: Optional[str]) -> dict:
+    """Parse ',k=v,k=v' from a CQ code body into a dict with unescaped values."""
+    if not raw:
+        return {}
+    params: dict[str, str] = {}
+    for pair in raw.split(","):
+        if not pair or "=" not in pair:
+            continue
+        key, _, value = pair.partition("=")
+        params[key.strip()] = _cq_unescape(value)
+    return params
 
 
 def _chat_id_for(message_type: str, raw_id: Any) -> str:
@@ -137,32 +161,90 @@ class NapCatPlatformAdapter(BasePlatformAdapter):
         await self.handle_message(message_event)
 
     def _extract_text(self, message: Any, raw_message: Optional[str]) -> tuple[str, bool, set[str]]:
-        """Flatten a OneBot message (array or CQ string) to plain text.
+        """Flatten a OneBot message to plain text.
 
-        Returns (text, at_me, mentioned_ids). Non-text segments degrade to a
-        ``[type]`` placeholder so the agent at least knows media exists.
+        Accepts both napcat shapes:
+        * array  — list of ``{"type": ..., "data": {...}}`` segments
+        * string — plain text with embedded CQ codes (``[CQ:at,qq=123]``),
+          per the OneBot 11 spec (escape rules: &amp; &#91; &#93; &comma;)
+
+        Returns (text, at_me, mentioned_ids). Non-text segments degrade to
+        readable placeholders so the agent knows media exists.
         """
-        mentioned: set[str] = set()
         if isinstance(message, str):
-            return (message or raw_message or ""), False, mentioned
+            return self._parse_cq_string(message or raw_message or "")
+        if isinstance(message, list):
+            segments = message
+        elif raw_message:  # unexpected shape, fall back to raw string parsing
+            return self._parse_cq_string(raw_message)
+        else:
+            return "", False, set()
+
+        mentioned: set[str] = set()
         parts: list[str] = []
-        for segment in message or []:
+        for segment in segments:
+            if not isinstance(segment, dict):
+                continue
             seg_type = segment.get("type")
             data = segment.get("data") or {}
             if seg_type == "text":
-                parts.append(data.get("text", ""))
-            elif seg_type == "at":
-                qq = str(data.get("qq", ""))
+                parts.append(str(data.get("text", "")))
+            else:
+                placeholder, qq = self._render_segment(seg_type, data)
+                parts.append(placeholder)
                 if qq:
                     mentioned.add(qq)
-                if data.get("qq") == "all":
-                    parts.append("@全体成员 ")
-            else:
-                parts.append(f"[{seg_type}]")
-        text = "".join(parts) or (raw_message or "")
+        text = "".join(parts).strip()
         self_id = self.client.self_id
-        at_me = bool(self_id and self_id in mentioned)
+        at_me = bool(self_id and (self_id in mentioned or "all" in mentioned))
         return text, at_me, mentioned
+
+    def _parse_cq_string(self, text: str) -> tuple[str, bool, set[str]]:
+        """Parse a string-format message with embedded CQ codes."""
+        mentioned: set[str] = set()
+        parts: list[str] = []
+        pos = 0
+        for match in _CQ_CODE_RE.finditer(text):
+            parts.append(_cq_unescape(text[pos:match.start()]))
+            pos = match.end()
+            seg_type = match.group(1).lower()
+            data = _parse_cq_params(match.group(2))
+            placeholder, qq = self._render_segment(seg_type, data)
+            parts.append(placeholder)
+            if qq:
+                mentioned.add(qq)
+        parts.append(_cq_unescape(text[pos:]))
+        result = "".join(parts).strip()
+        self_id = self.client.self_id
+        at_me = bool(self_id and (self_id in mentioned or "all" in mentioned))
+        return result, at_me, mentioned
+
+    @staticmethod
+    def _render_segment(seg_type: Any, data: dict) -> tuple[str, Optional[str]]:
+        """Map a non-text segment to a readable placeholder + mentioned qq."""
+        seg_type = str(seg_type).lower()
+        if seg_type == "at":
+            qq = str(data.get("qq", ""))
+            if qq == "all":
+                return "@全体成员 ", "all"
+            return (f"@{qq} " if qq else ""), (qq or None)
+        if seg_type == "image":
+            return "[图片]", None
+        if seg_type == "record":
+            return "[语音]", None
+        if seg_type == "video":
+            return "[视频]", None
+        if seg_type == "file":
+            return f"[文件:{data.get('name') or data.get('file', '')}]", None
+        if seg_type == "face":
+            return "[表情]", None
+        if seg_type == "reply":
+            return "", None  # reply anchor; hermes passes reply ids separately
+        if seg_type == "forward":
+            return "[合并转发消息]", None
+        if seg_type == "json":
+            return "[卡片消息]", None
+        return f"[{seg_type}]", None
 
     # ------------------------------------------------------------- outbound
 
