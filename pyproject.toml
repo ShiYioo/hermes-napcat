@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hermes-napcat"
+version = "0.1.0"
+description = "NapCat (QQ / OneBot v11) platform adapter and toolset for Hermes Agent"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "hermes-napcat contributors" }]
+keywords = ["hermes-agent", "napcat", "qq", "onebot", "chatbot", "agent"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Communications :: Chat",
+]
+# aiohttp ships with hermes-agent (the API server is built on it); no extra deps.
+dependencies = ["aiohttp>=3.9"]
+
+[project.entry-points."hermes_agent.plugins"]
+napcat = "hermes_napcat"
+
+[tool.setuptools]
+packages = ["hermes_napcat"]
+
+[tool.setuptools.package-dir]
+hermes_napcat = "."
