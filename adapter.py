@@ -134,6 +134,13 @@ class NapCatPlatformAdapter(BasePlatformAdapter):
             extra.get("group_all_messages")
             or os.getenv("NAPCAT_GROUP_ALL_MESSAGES", "")
         ).lower() in ("1", "true", "yes", "on")
+        # Group whitelist: when non-empty, messages from other groups are
+        # dropped before reaching the gateway (intersects with the gateway's
+        # NAPCAT_ALLOWED_USERS user allowlist).
+        groups_env = extra.get("allowed_groups") or os.getenv("NAPCAT_ALLOWED_GROUPS", "")
+        self.allowed_groups: frozenset[str] = frozenset(
+            g.strip() for g in groups_env.split(",") if g.strip()
+        )
 
         self.client = OneBotClient(self.ws_url, self.token, on_message_event=self._on_event)
 
@@ -176,6 +183,9 @@ class NapCatPlatformAdapter(BasePlatformAdapter):
             if event.get("sub_type") in ("notice", "anonymous"):
                 return
             group_id = event.get("group_id")
+            if self.allowed_groups and str(group_id) not in self.allowed_groups:
+                logger.debug("group %s not in NAPCAT_ALLOWED_GROUPS; ignoring", group_id)
+                return
             chat_id = _chat_id_for("group", group_id)
             chat_name = str(group_id)
             if not self.group_all_messages and not at_me:

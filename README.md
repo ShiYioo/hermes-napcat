@@ -55,16 +55,20 @@ pip install hermes-napcat
 ```bash
 NAPCAT_WS_URL=ws://127.0.0.1:3001     # NapCat 正向 WS 地址
 NAPCAT_TOKEN=your-onebot-token         # NapCat 里设置的 token
-NAPCAT_ALLOWED_USERS=10001,10002       # 允许对话的 QQ 号（逗号分隔）
+NAPCAT_ALLOWED_USERS=10001,10002       # 用户白名单：允许对话的 QQ 号（逗号分隔）
+NAPCAT_ALLOWED_GROUPS=987654321        # 群白名单：允许响应的群号（逗号分隔）
 NAPCAT_HOME_CHANNEL=g987654321         # cron 推送默认目标（QQ号 或 g+群号）
 # NAPCAT_GROUP_ALL_MESSAGES=1          # 可选：群内不用 @ 也响应
 ```
+
+**双重白名单（交集语义）**：群消息必须**同时**通过群白名单（`NAPCAT_ALLOWED_GROUPS`，插件层过滤）和用户白名单（`NAPCAT_ALLOWED_USERS`，网关层过滤）才会到达 agent；私聊只查用户白名单。群白名单为空表示不限制群（用户白名单仍然生效）；不在群白名单里的群会被静默丢弃，连配对提示都不会发出。
 
 | 变量 | 必填 | 说明 |
 |---|---|---|
 | `NAPCAT_WS_URL` | ✅ | NapCat 正向 WebSocket 地址 |
 | `NAPCAT_TOKEN` | 建议 | OneBot 鉴权 token（公网必须） |
-| `NAPCAT_ALLOWED_USERS` | 建议 | 允许对话的用户列表；默认拒绝所有用户 |
+| `NAPCAT_ALLOWED_USERS` | 建议 | 允许对话的用户列表；默认走配对(pairing)授权 |
+| `NAPCAT_ALLOWED_GROUPS` | - | 允许响应的群列表；空 = 不限群；与用户白名单取交集 |
 | `NAPCAT_ALLOW_ALL_USERS` | - | `1` 时任何人可对话（危险） |
 | `NAPCAT_HOME_CHANNEL` | - | cron/通知投递目标 |
 | `NAPCAT_GROUP_ALL_MESSAGES` | - | `1` 时群消息全量响应 |

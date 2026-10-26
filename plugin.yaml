@@ -15,7 +15,9 @@ optional_env:
     description: OneBot access token configured in NapCat (secret)
     secret: true
   - name: NAPCAT_ALLOWED_USERS
-    description: Comma-separated QQ numbers allowed to talk to the agent
+    description: Comma-separated QQ numbers allowed to talk to the agent (gateway-level user allowlist)
+  - name: NAPCAT_ALLOWED_GROUPS
+    description: Comma-separated group ids the agent listens to; group messages must pass BOTH this and the user allowlist (intersection). Empty = all groups
   - name: NAPCAT_ALLOW_ALL_USERS
     description: Set to 1/true to let any user talk to the agent (default off)
   - name: NAPCAT_HOME_CHANNEL
