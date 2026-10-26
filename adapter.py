@@ -18,18 +18,15 @@ environment variables (``NAPCAT_*``) as fallback, matching other adapters.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import logging
 import os
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
-from gateway.platforms.base import (
-    BasePlatformAdapter,
-    MessageEvent,
-    MessageType,
-    Platform,
-    SendResult,
-)
+from gateway.platforms.base import BasePlatformAdapter, Platform, SendResult
+from gateway.platforms.event import MessageEvent, MessageType
 from gateway.config import PlatformConfig
 
 from onebot import OneBotClient, OneBotError
@@ -113,7 +110,6 @@ class NapCatPlatformAdapter(BasePlatformAdapter):
             if not self.group_all_messages and not at_me:
                 logger.debug("group %s message without @me; ignoring", group_id)
                 return
-            text = self._strip_at_me(text)
         elif message_type == "private":
             chat_id = _chat_id_for("private", user_id)
             chat_name = user_name
@@ -124,21 +120,21 @@ class NapCatPlatformAdapter(BasePlatformAdapter):
             return
 
         message_event = MessageEvent(
-            content=text.strip(),
-            msg_type=MessageType.TEXT,
+            text=text.strip(),
+            message_type=MessageType.TEXT,
             source=self.build_source(
                 chat_id=chat_id,
-                chat_name=chat_name,
-                chat_type="group" if message_type == "group" else "private",
+                chat_name=str(chat_name),
+                chat_type="group" if message_type == "group" else "dm",
                 user_id=user_id,
                 user_name=str(user_name),
             ),
-            message_id=str(event.get("message_id", "")),
+            message_id=str(event.get("message_id") or uuid.uuid4().hex),
+            timestamp=datetime.datetime.now(),
         )
         await self.handle_message(message_event)
 
-    @staticmethod
-    def _extract_text(message: Any, raw_message: Optional[str]) -> tuple[str, bool, set[str]]:
+    def _extract_text(self, message: Any, raw_message: Optional[str]) -> tuple[str, bool, set[str]]:
         """Flatten a OneBot message (array or CQ string) to plain text.
 
         Returns (text, at_me, mentioned_ids). Non-text segments degrade to a
@@ -162,14 +158,9 @@ class NapCatPlatformAdapter(BasePlatformAdapter):
             else:
                 parts.append(f"[{seg_type}]")
         text = "".join(parts) or (raw_message or "")
-        return text, bool(mentioned), mentioned
-
-    def _strip_at_me(self, text: str) -> str:
-        # @mentions surface as bare text through CQ codes; strip leading ones.
         self_id = self.client.self_id
-        if not self_id:
-            return text
-        return text.replace(f"@{self_id}", "").strip()
+        at_me = bool(self_id and self_id in mentioned)
+        return text, at_me, mentioned
 
     # ------------------------------------------------------------- outbound
 
@@ -188,8 +179,7 @@ class NapCatPlatformAdapter(BasePlatformAdapter):
         segments: list[dict] = []
         if reply_to:
             segments.append({"type": "reply", "data": {"id": str(reply_to)}})
-        for chunk in content.split("\n"):
-            segments.append({"type": "text", "data": {"text": chunk + "\n"}})
+        segments.append({"type": "text", "data": {"text": content}})
 
         try:
             if message_type == "group":

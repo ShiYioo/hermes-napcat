@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Optional
 
-import adapter
 import schemas
 import tools
 from adapter import NapCatPlatformAdapter
@@ -22,16 +22,33 @@ logger = logging.getLogger("hermes.napcat")
 
 TOOLSET = "napcat"
 
+_adapter: Optional[NapCatPlatformAdapter] = None
+
 
 def _adapter_factory(config):
-    bot = NapCatPlatformAdapter(config)
+    global _adapter
+    _adapter = NapCatPlatformAdapter(config)
     # Share the adapter's OneBotClient with the napcat toolset.
-    tools.set_client(bot.client)
-    return bot
+    tools.set_client(_adapter.client)
+    return _adapter
 
 
 def _check() -> bool:
     return bool(os.getenv("NAPCAT_WS_URL"))
+
+
+async def _standalone_send(
+    chat_id: str,
+    content: str,
+    media_files: Optional[list[str]] = None,
+    thread_id: Optional[str] = None,
+    force_document: bool = False,
+) -> None:
+    """Cron/standalone sender wired into register_platform."""
+    if _adapter is None:
+        logger.error("standalone send requested but napcat adapter is not running")
+        return
+    await _adapter.standalone_send(chat_id, content, media_files, thread_id, force_document)
 
 
 async def _setup() -> bool:
@@ -63,16 +80,25 @@ async def _setup() -> bool:
 def register(ctx) -> None:
     ctx.register_platform(
         name="napcat",
+        label="NapCat (QQ)",
+        dashboard_description=(
+            "Relay messages between QQ (private/group) via NapCat and Hermes; "
+            "includes proactive send/file tools."
+        ),
         adapter_factory=_adapter_factory,
         check_fn=_check,
+        required_env=["NAPCAT_WS_URL"],
+        install_hint="No extra packages needed (uses aiohttp bundled with Hermes)",
+        setup_fn=_setup,
         cron_deliver_env_var="NAPCAT_HOME_CHANNEL",
-        cron_standalone_sender_env_var="NAPCAT_STANDALONE_TOKEN",
+        standalone_sender_fn=_standalone_send,
         allowed_users_env="NAPCAT_ALLOWED_USERS",
         allow_all_env="NAPCAT_ALLOW_ALL_USERS",
         max_message_length=4500,
+        emoji="🐧",
+        pii_safe=False,
         help="NapCat QQ adapter. Configure via NAPCAT_WS_URL/NAPCAT_TOKEN. "
         "Chat ids: QQ number (private) or g<group_id> (group).",
-        setup_fn=_setup,
         platform_hint=(
             "You are chatting over QQ via NapCat (OneBot v11). Keep replies "
             "concise; QQ friends and groups have message-length limits. The "
