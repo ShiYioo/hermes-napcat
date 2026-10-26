@@ -149,8 +149,11 @@ def send_file(args: dict, **kwargs) -> str:
 def get_group_list(args: dict, **kwargs) -> str:
     async def run() -> list:
         groups = await _client.call("get_group_list", {"no_cache": False})
+        if not isinstance(groups, list):
+            return {"raw": groups}  # unexpected shape; hand it through verbatim
         return [
-            {"group_id": g.get("group_id"), "name": g.get("group_name")} for g in groups or []
+            {"group_id": g.get("group_id"), "name": g.get("group_name")}
+            for g in groups if isinstance(g, dict)
         ]
 
     return _sync_call(run)
