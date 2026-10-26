@@ -130,6 +130,11 @@ class NapCatPlatformAdapter(BasePlatformAdapter):
         text, at_me, mentioned_ids = self._extract_text(raw_message, event.get("raw_message"))
 
         if message_type == "group":
+            # Per OneBot 11: sub_type "notice" is a system notice (not a user
+            # message) and "anonymous" carries an unreliable placeholder
+            # user_id — ignore both rather than feeding them to the agent.
+            if event.get("sub_type") in ("notice", "anonymous"):
+                return
             group_id = event.get("group_id")
             chat_id = _chat_id_for("group", group_id)
             chat_name = str(group_id)
@@ -320,19 +325,18 @@ class NapCatPlatformAdapter(BasePlatformAdapter):
                 logger.error("standalone_send text to %s failed: %s", chat_id, result.error)
         message_type, numeric_id = parse_chat_id(chat_id)
         for file_path in media_files or []:
-            path = Path(file_path).expanduser()
-            uri = path.resolve().as_uri()
+            path = Path(file_path).expanduser().resolve()
             try:
                 if message_type == "group":
                     await self.client.call(
                         "upload_group_file",
-                        {"group_id": numeric_id, "file": uri, "name": path.name},
+                        {"group_id": numeric_id, "file": str(path), "name": path.name},
                         timeout=180,
                     )
                 else:
                     await self.client.call(
                         "upload_private_file",
-                        {"user_id": numeric_id, "file": uri, "name": path.name},
+                        {"user_id": numeric_id, "file": str(path), "name": path.name},
                         timeout=180,
                     )
             except (OneBotError, ConnectionError, TimeoutError) as exc:

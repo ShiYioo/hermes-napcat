@@ -129,7 +129,8 @@ def send_file(args: dict, **kwargs) -> str:
     async def run() -> dict:
         message_type, numeric_id = parse_chat_id(target)
         params: dict[str, Any] = {
-            "file": path.resolve().as_uri(),
+            # plain absolute path — the most portable form for NapCat's file param
+            "file": str(path.resolve()),
             "name": str(file_name or path.name),
         }
         if message_type == "group":
