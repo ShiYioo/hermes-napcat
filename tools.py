@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import threading
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Optional
@@ -27,6 +28,11 @@ except ImportError:  # loaded as a directory plugin
 logger = logging.getLogger("hermes.napcat.tools")
 
 TOOL_TIMEOUT = 120.0
+
+# res_id extraction from a merged-forward wrapper: the `forward` segment id or
+# the "resid" field inside NapCat's com.tencent.multimsg JSON card.
+_CQ_FORWARD_ID_RE = re.compile(r"\[CQ:forward,[^\]]*?id=([^,\]]+)")
+_MULTIMSG_RESID_RE = re.compile(r'"resid"\s*:\s*"([^"]+)"', re.IGNORECASE)
 
 _client: Optional[OneBotClient] = None
 
@@ -192,6 +198,84 @@ def get_group_history(args: dict, **kwargs) -> str:
     return _sync_call(run)
 
 
+def get_forward_msg(args: dict, **kwargs) -> str:
+    """Unpack a merged-forward message into its constituent floors.
+
+    Accepts either the forward node's res_id or the outer wrapper message's
+    id (e.g. a chat message shown as '[合并转发消息]') — an all-numeric id is
+    treated as the wrapper and resolved to its res_id via get_msg first,
+    because NapCat's get_forward_msg only accepts the node res_id.
+    """
+    message_id = str(args.get("message_id", "")).strip()
+    if not message_id:
+        return _err("'message_id' is required")
+
+    async def run() -> list:
+        client = _client
+        assert client is not None  # _sync_call rejects before run() if disconnected
+        # Two id shapes arrive here: the forward node's res_id (long, often
+        # 19+ chars, from the forward segment or the send_forward result) or
+        # the outer chat message's id (short numeric). Length decides: a
+        # short id goes through get_msg to find the forward node — which
+        # NapCat returns either as a `forward` segment or as a `json` card
+        # (com.tencent.multimsg) carrying "resid" — and peels out the res_id.
+        if len(message_id) < 16:
+            outer = await client.call("get_msg", {"message_id": int(message_id)}, timeout=60)
+            res_id = ""
+            segments = outer.get("message") or []
+            if isinstance(segments, str):
+                # CQ-string shape: pull the forward/json id out by regex
+                m = _CQ_FORWARD_ID_RE.search(segments)
+                res_id = m.group(1) if m else ""
+            else:
+                for seg in segments:
+                    if not isinstance(seg, dict):
+                        continue
+                    seg_data = seg.get("data") or {}
+                    if seg.get("type") == "forward":
+                        res_id = str(seg_data.get("id", ""))
+                        break
+                    if seg.get("type") == "json":
+                        # NapCat renders merged forwards as a multimsg JSON card
+                        card = str(seg_data.get("data", ""))
+                        m = _MULTIMSG_RESID_RE.search(card)
+                        if m:
+                            res_id = m.group(1)
+                            break
+            if not res_id:
+                return [
+                    {
+                        "error": (
+                            f"message {message_id} contains no forward node "
+                            "(it may not be a merged-forward message, or it expired)"
+                        )
+                    }
+                ]
+            target_id: str = res_id
+        else:
+            target_id = message_id
+
+        data = await client.call("get_forward_msg", {"message_id": target_id}, timeout=60)
+        messages = data.get("messages") if isinstance(data, dict) else data
+        if not isinstance(messages, list):
+            return [{"raw": data}]
+        self_id = client.self_id
+        out = []
+        for m in messages:
+            if not isinstance(m, dict):
+                continue
+            sender = m.get("sender") or {}
+            text, _, _ = extract_text(self_id, m.get("message"), m.get("raw_message"))
+            out.append({
+                "time": m.get("time"),
+                "sender": sender.get("card") or sender.get("nickname") or m.get("user_id"),
+                "text": text,
+            })
+        return out
+
+    return _sync_call(run)
+
+
 def get_group_member_info(args: dict, **kwargs) -> str:
     group_id, user_id = args.get("group_id"), args.get("user_id")
     if group_id is None or user_id is None:
@@ -247,6 +331,7 @@ HANDLERS = {
     "napcat_send_file": send_file,
     "napcat_get_group_list": get_group_list,
     "napcat_get_group_history": get_group_history,
+    "napcat_get_forward_msg": get_forward_msg,
     "napcat_get_group_member_info": get_group_member_info,
     "napcat_group_mute": group_mute,
     "napcat_group_kick": group_kick,

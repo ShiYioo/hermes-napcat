@@ -74,6 +74,25 @@ GET_GROUP_HISTORY = {
     },
 }
 
+GET_FORWARD_MSG = {
+    "name": "napcat_get_forward_msg",
+    "description": (
+        "Unpack a merged-forward QQ message (合并转发消息) into its individual "
+        "floors. Pass the forward message's message_id. The bot shows merged "
+        "forwards as '[合并转发消息]' - use this tool to read what is inside."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "message_id": {
+                "type": "string",
+                "description": "Message id of the merged-forward message.",
+            },
+        },
+        "required": ["message_id"],
+    },
+}
+
 GET_GROUP_MEMBER_INFO = {
     "name": "napcat_get_group_member_info",
     "description": "Get a member's info (nickname, card, role, title) in a QQ group.",
@@ -134,6 +153,7 @@ ALL = [
     SEND_FILE,
     GET_GROUP_LIST,
     GET_GROUP_HISTORY,
+    GET_FORWARD_MSG,
     GET_GROUP_MEMBER_INFO,
     GROUP_MUTE,
     GROUP_KICK,
