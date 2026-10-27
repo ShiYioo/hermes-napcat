@@ -219,7 +219,8 @@ def _render_segment(seg_type: Any, data: dict) -> tuple[str, Optional[str]]:
     if seg_type == "reply":
         return "", None  # reply anchor; hermes passes reply ids separately
     if seg_type == "forward":
-        return "[合并转发消息]", None
+        fwd_id = str(data.get("id") or "")
+        return f"[合并转发消息:{fwd_id}]" if fwd_id else "[合并转发消息]", None
     if seg_type == "json":
         return "[卡片消息]", None
     return f"[{seg_type}]", None
