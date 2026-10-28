@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import threading
 from pathlib import Path
@@ -344,8 +345,9 @@ def list_stickers(args: dict, **kwargs) -> str:
     """List the bot account's QQ favorite stickers (自定义表情).
 
     When a scene index (scenes.json beside the local vault) matches a
-    sticker file, each entry gains a 'scenes' field; pass 'scene' to
-    filter by scene keyword (e.g. 冷笑/贴贴/无语).
+    sticker file — matched by content MD5, since QQ renames files — each
+    entry gains a 'scenes' field; pass 'scene' to filter by scene
+    keyword (e.g. 冷笑/贴贴/无语).
     """
     count = max(1, min(int(args.get("count", 48) or 48), 200))
     scene = str(args.get("scene", "")).strip()
@@ -358,10 +360,24 @@ def list_stickers(args: dict, **kwargs) -> str:
             details = await client.call("fetch_custom_face_detail", {"count": count}, timeout=30)
         except Exception:  # noqa: BLE001 - details are best-effort
             details = []
+        # scene index keyed by vault filename; build md5 -> filename map
         scene_map: dict[str, list] = {}
         try:
+            import hashlib
             import json as _json
-            scene_map = _json.load(open("/opt/data/meme_vault/scenes.json"))
+            raw = _json.load(open("/opt/data/meme_vault/scenes.json"))
+            vault_dir = "/opt/data/meme_vault"
+            md5_to_name = {}
+            for fname in os.listdir(vault_dir):
+                if fname.endswith((".gif", ".png", ".jpg", ".jpeg", ".webp")):
+                    with open(os.path.join(vault_dir, fname), "rb") as fh:
+                        md5_to_name[hashlib.md5(fh.read()).hexdigest().upper()] = fname
+            for fname, tags in raw.items():
+                scene_map[fname] = tags
+                # also key by any md5 that maps to this filename
+                for md5, name in md5_to_name.items():
+                    if name == fname:
+                        scene_map[md5] = tags
         except Exception:  # noqa: BLE001 - index optional
             pass
         out = []
@@ -370,10 +386,11 @@ def list_stickers(args: dict, **kwargs) -> str:
                 continue
             path = str(d.get("emoPath") or "")
             fname = path.rsplit("/", 1)[-1]
-            scenes = scene_map.get(fname, [])
+            md5 = str(d.get("md5") or "")
+            scenes = scene_map.get(fname) or scene_map.get(md5, [])
             entry = {
                 "res_id": d.get("resId"),
-                "md5": d.get("md5"),
+                "md5": md5,
                 "path": path,
                 "url": d.get("url"),
                 "scenes": scenes,
