@@ -222,6 +222,11 @@ def _render_segment(seg_type: Any, data: dict) -> tuple[str, Optional[str]]:
         fwd_id = str(data.get("id") or "")
         return f"[合并转发消息:{fwd_id}]" if fwd_id else "[合并转发消息]", None
     if seg_type == "json":
+        card = str(data.get("data") or "")
+        if card:
+            # Card payloads can be long (mini-app JSON blobs); keep a usable
+            # head so the agent can read title/url, cap the rest.
+            return f"[卡片消息:{card[:500]}]", None
         return "[卡片消息]", None
     return f"[{seg_type}]", None
 
