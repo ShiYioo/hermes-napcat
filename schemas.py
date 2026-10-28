@@ -149,6 +149,116 @@ REMOVE_STICKER = {
     },
 }
 
+POKE = {
+    "name": "napcat_send_poke",
+    "description": (
+        "Poke (戳一戳) a user. Pass user_id for a private poke, or user_id + "
+        "group_id for a group poke. Playful attention-getter."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "user_id": {"type": "integer", "description": "QQ number to poke."},
+            "group_id": {"type": "integer", "description": "Group id (omit for private poke)."},
+        },
+        "required": ["user_id"],
+    },
+}
+
+GET_ESSENCE_MSGS = {
+    "name": "napcat_get_essence_msgs",
+    "description": "List a group's essence messages (精华消息) - the curated best-of set by group admins.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "group_id": {"type": "integer", "description": "Group id."},
+        },
+        "required": ["group_id"],
+    },
+}
+
+GROUP_SIGN = {
+    "name": "napcat_group_sign",
+    "description": "Sign in (打卡) to a group on behalf of the bot account. Requires the account to have signing available.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "group_id": {"type": "integer", "description": "Group id."},
+        },
+        "required": ["group_id"],
+    },
+}
+
+SET_INPUT_STATUS = {
+    "name": "napcat_set_input_status",
+    "description": "Show or clear the 'typing...' indicator toward a user (human-like touch before long replies).",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "user_id": {"type": "integer", "description": "QQ number to show typing status to."},
+            "typing": {"type": "integer", "description": "1 = typing (default), 0 = clear."},
+        },
+        "required": ["user_id"],
+    },
+}
+
+GET_PRIVATE_HISTORY = {
+    "name": "napcat_get_private_history",
+    "description": (
+        "Fetch recent private-chat history with a user (the DM counterpart of "
+        "napcat_get_group_history). Use for reviewing past conversations."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "user_id": {"type": "integer", "description": "QQ number."},
+            "count": {"type": "integer", "description": "Number of recent messages (default 20, max 100)."},
+        },
+        "required": ["user_id"],
+    },
+}
+
+SEND_LIKE = {
+    "name": "napcat_send_like",
+    "description": "Give a user's profile a like (点赞). Rate-limited by QQ: max 10 per user per day, 1-10 in one call.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "user_id": {"type": "integer", "description": "QQ number to like."},
+            "times": {"type": "integer", "description": "Like count 1-10 (default 1)."},
+        },
+        "required": ["user_id"],
+    },
+}
+
+CHECK_URL_SAFETY = {
+    "name": "napcat_check_url_safety",
+    "description": (
+        "Check whether a URL is flagged unsafe by QQ's safety service before "
+        "opening or sharing it. Verdict: safe / unknown / dangerous."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "url": {"type": "string", "description": "URL to check."},
+        },
+        "required": ["url"],
+    },
+}
+
+LIST_GROUP_FILES = {
+    "name": "napcat_list_group_files",
+    "description": "List a group's shared files (root listing, or a subfolder via folder_id).",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "group_id": {"type": "integer", "description": "Group id."},
+            "folder_id": {"type": "string", "description": "Folder id (omit for root)."},
+        },
+        "required": ["group_id"],
+    },
+}
+
 GROUP_MUTE = {
     "name": "napcat_group_mute",
     "description": (
@@ -201,6 +311,14 @@ ALL = [
     ADD_STICKER,
     LIST_STICKERS,
     REMOVE_STICKER,
+    POKE,
+    GET_ESSENCE_MSGS,
+    GROUP_SIGN,
+    SET_INPUT_STATUS,
+    GET_PRIVATE_HISTORY,
+    SEND_LIKE,
+    CHECK_URL_SAFETY,
+    LIST_GROUP_FILES,
     GROUP_MUTE,
     GROUP_KICK,
 ]

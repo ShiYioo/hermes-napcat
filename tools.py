@@ -382,6 +382,203 @@ def remove_sticker(args: dict, **kwargs) -> str:
     return _sync_call(run)
 
 
+def send_poke(args: dict, **kwargs) -> str:
+    """Poke (戳一戳) a user in a private chat or a group."""
+    user_id = args.get("user_id")
+    group_id = args.get("group_id")
+    if user_id is None:
+        return _err("'user_id' is required")
+
+    async def run() -> dict:
+        if group_id is not None:
+            await _client.call(
+                "group_poke", {"group_id": int(group_id), "user_id": int(user_id)}, timeout=30
+            )
+            return {"poked": int(user_id), "group": int(group_id)}
+        await _client.call("friend_poke", {"user_id": int(user_id)}, timeout=30)
+        return {"poked": int(user_id), "private": True}
+
+    return _sync_call(run)
+
+
+def get_essence_msgs(args: dict, **kwargs) -> str:
+    """List a group's essence messages (精华消息)."""
+    group_id = args.get("group_id")
+    if group_id is None:
+        return _err("'group_id' is required")
+
+    async def run() -> list:
+        client = _client
+        assert client is not None  # _sync_call rejects before run() if disconnected
+        data = await client.call("get_essence_msg_list", {"group_id": int(group_id)}, timeout=30)
+        msgs = data if isinstance(data, list) else (data or {}).get("msg_list", [])
+        out = []
+        for m in msgs:
+            if not isinstance(m, dict):
+                continue
+            sender = m.get("sender_id")
+            out.append({
+                "msg_id": str(m.get("message_id", "")),
+                "sender": str(sender or ""),
+                "sender_nick": m.get("sender_nick", ""),
+                "operator_nick": m.get("operator_nick", ""),
+                "content": str(m.get("content", ""))[:300],
+            })
+        return out
+
+    return _sync_call(run)
+
+
+def group_sign(args: dict, **kwargs) -> str:
+    """Sign in (打卡) to a group."""
+    group_id = args.get("group_id")
+    if group_id is None:
+        return _err("'group_id' is required")
+
+    async def run() -> dict:
+        client = _client
+        assert client is not None  # _sync_call rejects before run() if disconnected
+        await client.call("send_group_sign", {"group_id": int(group_id)}, timeout=30)
+        return {"signed": True, "group": int(group_id)}
+
+    return _sync_call(run)
+
+
+    return _sync_call(run)
+
+
+def set_input_status(args: dict, **kwargs) -> str:
+    """Show/clear the 'typing...' indicator toward a user.
+
+    event_type: 1 = typing, 0 = clear (OneBot/NapCat convention).
+    """
+    user_id = args.get("user_id")
+    event_type = int(args.get("typing", 1))
+    if user_id is None:
+        return _err("'user_id' is required")
+
+    async def run() -> dict:
+        client = _client
+        assert client is not None  # _sync_call rejects before run() if disconnected
+        await client.call(
+            "set_input_status",
+            {"user_id": int(user_id), "event_type": event_type},
+            timeout=30,
+        )
+        return {"user": int(user_id), "typing": bool(event_type)}
+
+    return _sync_call(run)
+
+
+def get_private_history(args: dict, **kwargs) -> str:
+    """Fetch recent private-chat history with a user."""
+    user_id = args.get("user_id")
+    if user_id is None:
+        return _err("'user_id' is required")
+    count = max(1, min(int(args.get("count", 20) or 20), 100))
+
+    async def run() -> list:
+        client = _client
+        assert client is not None  # _sync_call rejects before run() if disconnected
+        data = await client.call(
+            "get_friend_msg_history",
+            {"user_id": int(user_id), "count": count},
+            timeout=60,
+        )
+        messages = data.get("messages") if isinstance(data, dict) else data
+        if not isinstance(messages, list):
+            return [{"raw": data}]
+        self_id = client.self_id
+        out = []
+        for m in messages[-count:]:
+            if not isinstance(m, dict):
+                continue
+            sender = m.get("sender") or {}
+            text, _, _ = extract_text(self_id, m.get("message"), m.get("raw_message"))
+            out.append({
+                "time": m.get("time"),
+                "sender": sender.get("card") or sender.get("nickname") or m.get("user_id"),
+                "text": text,
+            })
+        return out
+
+    return _sync_call(run)
+
+
+def send_like(args: dict, **kwargs) -> str:
+    """Give a user's profile a daily like (点赞)."""
+    user_id = args.get("user_id")
+    if user_id is None:
+        return _err("'user_id' is required")
+    times = max(1, min(int(args.get("times", 1) or 1), 10))
+
+    async def run() -> dict:
+        client = _client
+        assert client is not None  # _sync_call rejects before run() if disconnected
+        await client.call(
+            "send_like", {"user_id": int(user_id), "times": times}, timeout=30
+        )
+        return {"liked": int(user_id), "times": times}
+
+    return _sync_call(run)
+
+
+def check_url_safety(args: dict, **kwargs) -> str:
+    """Check whether a URL is flagged unsafe by QQ's safety service."""
+    url = str(args.get("url", "")).strip()
+    if not url:
+        return _err("'url' is required")
+
+    async def run() -> dict:
+        client = _client
+        assert client is not None  # _sync_call rejects before run() if disconnected
+        r = await client.call("check_url_safely", {"url": url}, timeout=30)
+        level = (r or {}).get("level") if isinstance(r, dict) else r
+        levels = {1: "safe", 2: "unknown", 3: "dangerous", 4: "unknown"}
+        return {"url": url, "level": level, "verdict": levels.get(level, str(level))}
+
+    return _sync_call(run)
+
+
+def list_group_files(args: dict, **kwargs) -> str:
+    """List a group's shared files (root or a specific folder)."""
+    group_id = args.get("group_id")
+    if group_id is None:
+        return _err("'group_id' is required")
+    folder_id = str(args.get("folder_id", "")).strip()
+
+    async def run() -> list:
+        client = _client
+        assert client is not None  # _sync_call rejects before run() if disconnected
+        if folder_id:
+            data = await client.call(
+                "get_group_files_by_folder",
+                {"group_id": int(group_id), "folder_id": folder_id},
+                timeout=30,
+            )
+        else:
+            data = await client.call(
+                "get_group_root_files", {"group_id": int(group_id)}, timeout=30
+            )
+        out = []
+        if isinstance(data, dict):
+            for key in ("file_list", "files"):
+                for f in data.get(key) or []:
+                    if isinstance(f, dict):
+                        out.append({
+                            "id": f.get("file_id") or f.get("id"),
+                            "name": f.get("file_name") or f.get("name"),
+                            "size": f.get("size"),
+                            "type": "folder" if f.get("is_dir") or f.get("folder_id") else "file",
+                            "uploader": (f.get("uploader") or f.get("upload_user_name") or ""),
+                        })
+            if not out and data:
+                return [{"raw_keys": list(data.keys())}]
+        return out
+
+    return _sync_call(run)
+
+
 def get_group_member_info(args: dict, **kwargs) -> str:
     group_id, user_id = args.get("group_id"), args.get("user_id")
     if group_id is None or user_id is None:
@@ -444,4 +641,12 @@ HANDLERS = {
     "napcat_remove_sticker": remove_sticker,
     "napcat_group_mute": group_mute,
     "napcat_group_kick": group_kick,
+    "napcat_send_poke": send_poke,
+    "napcat_get_essence_msgs": get_essence_msgs,
+    "napcat_group_sign": group_sign,
+    "napcat_set_input_status": set_input_status,
+    "napcat_get_private_history": get_private_history,
+    "napcat_send_like": send_like,
+    "napcat_check_url_safety": check_url_safety,
+    "napcat_list_group_files": list_group_files,
 }
