@@ -276,6 +276,112 @@ def get_forward_msg(args: dict, **kwargs) -> str:
     return _sync_call(run)
 
 
+def add_sticker(args: dict, **kwargs) -> str:
+    """Add an image to the bot account's QQ favorite stickers (自定义表情).
+
+    Accepts either a URL reachable by NapCat (QQ CDN share links included) or
+    a plain message_id of a message carrying an image. Because NapCat only
+    accepts add_custom_face with a local path, URL/message-id inputs are
+    landed into NapCat's own cache first (send to self → get_msg →
+    get_image), then registered.
+    """
+    url = str(args.get("url", "")).strip()
+    message_id = str(args.get("message_id", "")).strip()
+    name = str(args.get("name", "")).strip()
+    if not url and not message_id:
+        return _err("either 'url' or 'message_id' is required")
+
+    async def run() -> dict:
+        client = _client
+        assert client is not None  # _sync_call rejects before run() if disconnected
+
+        # 1. obtain an image segment: either send the URL to the master DM
+        #    (NapCat downloads it into its own cache) or reuse an existing
+        #    message's image.
+        if url:
+            self_id = str(client.self_id or "")
+            if not self_id.isdigit():
+                return {"error": "bot self_id unknown; cannot self-send to land the image in cache"}
+            sent = await client.call(
+                "send_private_msg",
+                {"user_id": int(self_id), "message": [{"type": "image", "data": {"file": url}}]},
+                timeout=90,
+            )
+            src_mid = (sent or {}).get("message_id")
+        else:
+            src_mid = int(message_id) if message_id.isdigit() else message_id
+        rec = await client.call("get_msg", {"message_id": src_mid}, timeout=30)
+        file_key = ""
+        for seg in rec.get("message") or []:
+            if isinstance(seg, dict) and seg.get("type") == "image":
+                file_key = str((seg.get("data") or {}).get("file", ""))
+                break
+        if not file_key:
+            return {"error": f"message {src_mid} contains no image segment"}
+
+        # 2. resolve the NapCat-local absolute path
+        img = await client.call("get_image", {"file": file_key}, timeout=30)
+        local_path = str((img or {}).get("file", ""))
+        if not local_path:
+            return {"error": f"could not resolve local path for {file_key}"}
+
+        # 3. register as favorite sticker
+        params: dict[str, Any] = {"file": local_path, "is_origin": True}
+        if name:
+            params["file_name"] = name if name.endswith((".gif", ".png", ".jpg", ".jpeg", ".webp")) else f"{name}.gif"
+        r = await client.call("add_custom_face", params, timeout=60)
+        return {
+            "added": True,
+            "local_path": local_path,
+            "file_name": params.get("file_name", ""),
+            "is_exist": (r or {}).get("isExist"),
+        }
+
+    return _sync_call(run)
+
+
+def list_stickers(args: dict, **kwargs) -> str:
+    """List the bot account's QQ favorite stickers (自定义表情)."""
+    count = max(1, min(int(args.get("count", 48) or 48), 200))
+
+    async def run() -> dict:
+        client = _client
+        assert client is not None
+        urls = await client.call("fetch_custom_face", {"count": count}, timeout=30)
+        try:
+            details = await client.call("fetch_custom_face_detail", {"count": count}, timeout=30)
+        except Exception:  # noqa: BLE001 - details are best-effort
+            details = []
+        out = []
+        for d in details if isinstance(details, list) else []:
+            if isinstance(d, dict):
+                out.append({
+                    "res_id": d.get("resId"),
+                    "md5": d.get("md5"),
+                    "path": d.get("emoPath"),
+                    "url": d.get("url"),
+                })
+        return {"count": len(out) or len(urls) if isinstance(urls, list) else len(out),
+                "stickers": out, "urls": urls if isinstance(urls, list) else []}
+
+    return _sync_call(run)
+
+
+def remove_sticker(args: dict, **kwargs) -> str:
+    """Remove a sticker from the bot account's QQ favorite stickers."""
+    res_id = str(args.get("res_id", "")).strip()
+    if not res_id:
+        return _err("'res_id' is required (from napcat_list_stickers)")
+
+    async def run() -> dict:
+        client = _client
+        assert client is not None
+        r = await client.call("del_custom_face", {"res_id": res_id}, timeout=30)
+        return {"removed": res_id, "raw": r}
+
+    return _sync_call(run)
+
+
 def get_group_member_info(args: dict, **kwargs) -> str:
     group_id, user_id = args.get("group_id"), args.get("user_id")
     if group_id is None or user_id is None:
@@ -333,6 +439,9 @@ HANDLERS = {
     "napcat_get_group_history": get_group_history,
     "napcat_get_forward_msg": get_forward_msg,
     "napcat_get_group_member_info": get_group_member_info,
+    "napcat_add_sticker": add_sticker,
+    "napcat_list_stickers": list_stickers,
+    "napcat_remove_sticker": remove_sticker,
     "napcat_group_mute": group_mute,
     "napcat_group_kick": group_kick,
 }
