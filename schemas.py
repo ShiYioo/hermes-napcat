@@ -127,11 +127,17 @@ ADD_STICKER = {
 
 LIST_STICKERS = {
     "name": "napcat_list_stickers",
-    "description": "List the bot account's QQ favorite stickers (自定义表情), with res_id/md5/path/url per item.",
+    "description": (
+        "List the bot account's QQ favorite stickers (自定义表情), with "
+        "res_id/md5/path/url per item plus scene tags when the local vault "
+        "index knows the file. Pass 'scene' to filter by scene keyword "
+        "(e.g. 冷笑/贴贴/无语/委屈)."
+    ),
     "parameters": {
         "type": "object",
         "properties": {
             "count": {"type": "integer", "description": "Max stickers to fetch (default 48)."},
+            "scene": {"type": "string", "description": "Optional scene keyword to filter by (matches vault index)."},
         },
         "required": [],
     },

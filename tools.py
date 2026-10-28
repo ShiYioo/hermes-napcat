@@ -341,8 +341,14 @@ def add_sticker(args: dict, **kwargs) -> str:
 
 
 def list_stickers(args: dict, **kwargs) -> str:
-    """List the bot account's QQ favorite stickers (自定义表情)."""
+    """List the bot account's QQ favorite stickers (自定义表情).
+
+    When a scene index (scenes.json beside the local vault) matches a
+    sticker file, each entry gains a 'scenes' field; pass 'scene' to
+    filter by scene keyword (e.g. 冷笑/贴贴/无语).
+    """
     count = max(1, min(int(args.get("count", 48) or 48), 200))
+    scene = str(args.get("scene", "")).strip()
 
     async def run() -> dict:
         client = _client
@@ -352,16 +358,32 @@ def list_stickers(args: dict, **kwargs) -> str:
             details = await client.call("fetch_custom_face_detail", {"count": count}, timeout=30)
         except Exception:  # noqa: BLE001 - details are best-effort
             details = []
+        scene_map: dict[str, list] = {}
+        try:
+            import json as _json
+            scene_map = _json.load(open("/opt/data/meme_vault/scenes.json"))
+        except Exception:  # noqa: BLE001 - index optional
+            pass
         out = []
         for d in details if isinstance(details, list) else []:
-            if isinstance(d, dict):
-                out.append({
-                    "res_id": d.get("resId"),
-                    "md5": d.get("md5"),
-                    "path": d.get("emoPath"),
-                    "url": d.get("url"),
-                })
-        return {"count": len(out) or len(urls) if isinstance(urls, list) else len(out),
+            if not isinstance(d, dict):
+                continue
+            path = str(d.get("emoPath") or "")
+            fname = path.rsplit("/", 1)[-1]
+            scenes = scene_map.get(fname, [])
+            entry = {
+                "res_id": d.get("resId"),
+                "md5": d.get("md5"),
+                "path": path,
+                "url": d.get("url"),
+                "scenes": scenes,
+            }
+            if scene and scene not in scenes:
+                continue
+            out.append(entry)
+        total = len(out)
+        return {"count": total,
+                "scene_filter": scene or None,
                 "stickers": out, "urls": urls if isinstance(urls, list) else []}
 
     return _sync_call(run)
