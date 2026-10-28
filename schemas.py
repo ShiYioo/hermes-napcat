@@ -106,6 +106,49 @@ GET_GROUP_MEMBER_INFO = {
     },
 }
 
+ADD_STICKER = {
+    "name": "napcat_add_sticker",
+    "description": (
+        "Add an image to the bot account's QQ favorite stickers (自定义表情). "
+        "Pass either 'url' (an image URL reachable by NapCat, e.g. a QQ CDN "
+        "multimedia link) or 'message_id' (a message containing an image). "
+        "Optional 'name' sets the sticker file name."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "url": {"type": "string", "description": "Image URL (QQ CDN multimedia links work)."}, 
+            "message_id": {"type": "string", "description": "Message id carrying the image (alternative to url)."},
+            "name": {"type": "string", "description": "Optional sticker file name (extension auto-appended)."},
+        },
+        "required": [],
+    },
+}
+
+LIST_STICKERS = {
+    "name": "napcat_list_stickers",
+    "description": "List the bot account's QQ favorite stickers (自定义表情), with res_id/md5/path/url per item.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "count": {"type": "integer", "description": "Max stickers to fetch (default 48)."},
+        },
+        "required": [],
+    },
+}
+
+REMOVE_STICKER = {
+    "name": "napcat_remove_sticker",
+    "description": "Remove a sticker from the bot account's QQ favorite stickers by res_id (from napcat_list_stickers).",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "res_id": {"type": "string", "description": "Sticker res_id (from napcat_list_stickers)."},
+        },
+        "required": ["res_id"],
+    },
+}
+
 GROUP_MUTE = {
     "name": "napcat_group_mute",
     "description": (
@@ -155,6 +198,9 @@ ALL = [
     GET_GROUP_HISTORY,
     GET_FORWARD_MSG,
     GET_GROUP_MEMBER_INFO,
+    ADD_STICKER,
+    LIST_STICKERS,
+    REMOVE_STICKER,
     GROUP_MUTE,
     GROUP_KICK,
 ]
