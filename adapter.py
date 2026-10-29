@@ -90,13 +90,21 @@ def cq_to_segments(content: str) -> list[dict]:
         seg_type = match.group(1).lower()
         params = _parse_cq_params(match.group(2))
         builder = _CQ_OUTBOUND_MAP.get(seg_type)
-        if builder is None:
-            segments.append({"type": "text", "data": {"text": match.group(0)}})
-        else:
+        if builder is not None:
             segment = builder(params)
-            if segment["data"]:
+            # A media segment only counts when its payload is a URI the QQ side can
+            # resolve (http(s) URL, base64://, file://). Placeholder text like
+            # "[CQ:image,file=链接或本地路径]" used to become an image segment with
+            # that Chinese placeholder as the file value -> NapCat error 1200
+            # "识别URL失败" and the whole reply (plus its plain-text fallback, which
+            # carried the same literal) silently failed to deliver.
+            payload = str(segment["data"].get("file") or "")
+            resolvable = payload.startswith(("http://", "https://", "base64://", "file://", "ftp://"))
+            if segment["data"] and (resolvable or "file" not in segment["data"]):
                 segments.append(segment)
-            # else: malformed code (e.g. [CQ:at] without qq) — drop silently
+                continue
+            # Not resolvable: fall through and keep the raw code as literal text.
+        segments.append({"type": "text", "data": {"text": match.group(0)}})
     if text := content[pos:]:
         segments.append({"type": "text", "data": {"text": text}})
     return segments or [{"type": "text", "data": {"text": ""}}]
@@ -198,7 +206,8 @@ def _render_segment(seg_type: Any, data: dict) -> tuple[str, Optional[str]]:
             return "@全体成员 ", "all"
         return (f"@{qq} " if qq else ""), (qq or None)
     if seg_type == "image":
-        return "[图片]", None
+        src_url = str(data.get("url") or data.get("file") or "")
+        return f"[图片:{src_url}]" if src_url else "[图片]", None
     if seg_type == "record":
         return "[语音]", None
     if seg_type == "video":
@@ -210,8 +219,14 @@ def _render_segment(seg_type: Any, data: dict) -> tuple[str, Optional[str]]:
     if seg_type == "reply":
         return "", None  # reply anchor; hermes passes reply ids separately
     if seg_type == "forward":
-        return "[合并转发消息]", None
+        fwd_id = str(data.get("id") or "")
+        return f"[合并转发消息:{fwd_id}]" if fwd_id else "[合并转发消息]", None
     if seg_type == "json":
+        card = str(data.get("data") or "")
+        if card:
+            # Card payloads can be long (mini-app JSON blobs); keep a usable
+            # head so the agent can read title/url, cap the rest.
+            return f"[卡片消息:{card[:500]}]", None
         return "[卡片消息]", None
     return f"[{seg_type}]", None
 
