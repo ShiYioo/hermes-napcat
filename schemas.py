@@ -48,6 +48,24 @@ SEND_FILE = {
     },
 }
 
+SEND_VIDEO = {
+    "name": "napcat_send_video",
+    "description": (
+        "Send a local video file as an inline video message that QQ renders "
+        "with a preview player in the chat flow (unlike napcat_send_file, "
+        "which puts the video on the group file shelf). Use this for short "
+        "clips/memes; use napcat_send_file for large videos or documents."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "target": {"type": "string", "description": TARGET_DESC},
+            "file_path": {"type": "string", "description": "Absolute path of the video file (mp4 recommended)."},
+        },
+        "required": ["target", "file_path"],
+    },
+}
+
 GET_GROUP_LIST = {
     "name": "napcat_get_group_list",
     "description": "List the QQ groups the bot account has joined.",
@@ -310,6 +328,7 @@ GROUP_KICK = {
 ALL = [
     SEND_MESSAGE,
     SEND_FILE,
+    SEND_VIDEO,
     GET_GROUP_LIST,
     GET_GROUP_HISTORY,
     GET_FORWARD_MSG,
