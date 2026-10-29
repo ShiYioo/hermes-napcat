@@ -100,6 +100,14 @@ def cq_to_segments(content: str) -> list[dict]:
             # carried the same literal) silently failed to deliver.
             payload = str(segment["data"].get("file") or "")
             resolvable = payload.startswith(("http://", "https://", "base64://", "file://", "ftp://"))
+            # Bare local paths (e.g. meme-vault files) are not resolvable by
+            # NapCat directly, but if the file exists on the Hermes side we
+            # can inline it as base64:// just like send_file does.
+            if not resolvable and payload.startswith("/"):
+                p = Path(payload)
+                if p.is_file() and p.stat().st_size <= 50 * 1024 * 1024:
+                    segment["data"]["file"] = file_param(p)
+                    resolvable = True
             if segment["data"] and (resolvable or "file" not in segment["data"]):
                 segments.append(segment)
                 continue
