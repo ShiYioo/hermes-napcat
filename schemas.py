@@ -66,6 +66,24 @@ SEND_VIDEO = {
     },
 }
 
+SEND_IMAGE = {
+    "name": "napcat_send_image",
+    "description": (
+        "Send a local image as an inline picture message that QQ shows "
+        "in-chat (unlike napcat_send_file, which puts it on the group file "
+        "shelf). webp/heif/avif are auto-converted to png. Use this for "
+        "stickers/memes/photos."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "target": {"type": "string", "description": TARGET_DESC},
+            "file_path": {"type": "string", "description": "Absolute path of the image file."},
+        },
+        "required": ["target", "file_path"],
+    },
+}
+
 GET_GROUP_LIST = {
     "name": "napcat_get_group_list",
     "description": "List the QQ groups the bot account has joined.",
@@ -329,6 +347,7 @@ ALL = [
     SEND_MESSAGE,
     SEND_FILE,
     SEND_VIDEO,
+    SEND_IMAGE,
     GET_GROUP_LIST,
     GET_GROUP_HISTORY,
     GET_FORWARD_MSG,
