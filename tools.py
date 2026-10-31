@@ -154,6 +154,37 @@ def send_file(args: dict, **kwargs) -> str:
         return _err(f"invalid target '{target}': {exc}")
 
 
+def _send_media_message(target: str, seg_type: str, path: Path, tool_timeout: float) -> str:
+    """Shared: send a local image/video as an inline message segment."""
+    if not target or not str(path):
+        return _err("both 'target' and 'file_path' are required")
+    if not path.is_file():
+        return _err(f"file not found: {path}")
+
+    async def run() -> dict:
+        client = _client
+        assert client is not None  # _sync_call rejects before run() if disconnected
+        message_type, numeric_id = parse_chat_id(target)
+        segment = {"type": seg_type, "data": {"file": file_param(path)}}
+        if message_type == "group":
+            data = await client.call(
+                "send_group_msg", {"group_id": numeric_id, "message": [segment]},
+                timeout=tool_timeout,
+            )
+        else:
+            data = await client.call(
+                "send_private_msg", {"user_id": numeric_id, "message": [segment]},
+                timeout=tool_timeout,
+            )
+        return {"sent": str(path), "target": target,
+                "message_id": (data or {}).get("message_id")}
+
+    try:
+        return _sync_call(run)
+    except ValueError as exc:
+        return _err(f"invalid target '{target}': {exc}")
+
+
 def send_video(args: dict, **kwargs) -> str:
     """Send a video as an inline video message (QQ embeds a preview player).
 
@@ -165,31 +196,31 @@ def send_video(args: dict, **kwargs) -> str:
     if not target or not file_path:
         return _err("both 'target' and 'file_path' are required")
     path = Path(file_path).expanduser()
-    if not path.is_file():
-        return _err(f"file not found: {path}")
+    return _send_media_message(target, "video", path, TOOL_TIMEOUT)
 
-    async def run() -> dict:
-        client = _client
-        assert client is not None  # _sync_call rejects before run() if disconnected
-        message_type, numeric_id = parse_chat_id(target)
-        segment = {"type": "video", "data": {"file": file_param(path)}}
-        if message_type == "group":
-            data = await client.call(
-                "send_group_msg", {"group_id": numeric_id, "message": [segment]},
-                timeout=TOOL_TIMEOUT,
-            )
-        else:
-            data = await client.call(
-                "send_private_msg", {"user_id": numeric_id, "message": [segment]},
-                timeout=TOOL_TIMEOUT,
-            )
-        return {"sent": str(path), "target": target,
-                "message_id": (data or {}).get("message_id")}
 
-    try:
-        return _sync_call(run)
-    except ValueError as exc:
-        return _err(f"invalid target '{target}': {exc}")
+def send_image(args: dict, **kwargs) -> str:
+    """Send an image as an inline picture message (QQ shows the picture in-chat).
+
+    Unlike send_file (group file shelf), an image segment renders in the chat
+    flow. Accepts jpg/png/gif/webp; webp/heif are converted to png first when
+    Pillow is available (QQ renders those formats inconsistently as files).
+    """
+    target = str(args.get("target", "")).strip()
+    file_path = str(args.get("file_path", "")).strip()
+    if not target or not file_path:
+        return _err("both 'target' and 'file_path' are required")
+    path = Path(file_path).expanduser()
+    if path.suffix.lower() in (".webp", ".heif", ".heic", ".avif"):
+        try:
+            from PIL import Image
+            img = Image.open(path)
+            converted = path.with_suffix(".png")
+            img.convert("RGBA" if img.mode in ("RGBA", "P") else "RGB").save(converted)
+            path = converted
+        except Exception:  # noqa: BLE001 - conversion best-effort, send original
+            pass
+    return _send_media_message(target, "image", path, TOOL_TIMEOUT)
 
 
 def get_group_list(args: dict, **kwargs) -> str:
@@ -710,6 +741,7 @@ HANDLERS = {
     "napcat_send_message": send_message,
     "napcat_send_file": send_file,
     "napcat_send_video": send_video,
+    "napcat_send_image": send_image,
     "napcat_get_group_list": get_group_list,
     "napcat_get_group_history": get_group_history,
     "napcat_get_forward_msg": get_forward_msg,
