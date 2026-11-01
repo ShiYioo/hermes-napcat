@@ -223,6 +223,29 @@ def send_image(args: dict, **kwargs) -> str:
     return _send_media_message(target, "image", path, TOOL_TIMEOUT)
 
 
+def recall_message(args: dict, **kwargs) -> str:
+    """Recall (撤回) a message sent by the bot account.
+
+    QQ only allows recalling within a short window after sending (~2 min for
+    groups), so this is an immediate-error-correction tool, not history
+    editing. Pass the message_id returned by a previous send.
+    """
+    message_id = str(args.get("message_id", "")).strip()
+    if not message_id:
+        return _err("'message_id' is required")
+
+    async def run() -> dict:
+        client = _client
+        assert client is not None  # _sync_call rejects before run() if disconnected
+        await client.call("delete_msg", {"message_id": int(message_id)}, timeout=30)
+        return {"recalled": message_id}
+
+    try:
+        return _sync_call(run)
+    except ValueError as exc:
+        return _err(f"invalid message_id: {exc}")
+
+
 def get_group_list(args: dict, **kwargs) -> str:
     async def run() -> list:
         groups = await _client.call("get_group_list", {"no_cache": False})
@@ -742,6 +765,7 @@ HANDLERS = {
     "napcat_send_file": send_file,
     "napcat_send_video": send_video,
     "napcat_send_image": send_image,
+    "napcat_recall_message": recall_message,
     "napcat_get_group_list": get_group_list,
     "napcat_get_group_history": get_group_history,
     "napcat_get_forward_msg": get_forward_msg,
