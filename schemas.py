@@ -84,6 +84,26 @@ SEND_IMAGE = {
     },
 }
 
+RECALL_MESSAGE = {
+    "name": "napcat_recall_message",
+    "description": (
+        "Recall (撤回) a message previously sent by the bot. QQ only allows "
+        "recalling within ~2 minutes of sending, so use this immediately "
+        "after noticing a typo or wrong recipient. Pass the message_id from "
+        "the original send result."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "message_id": {
+                "type": "string",
+                "description": "Message id to recall (from the original send result).",
+            },
+        },
+        "required": ["message_id"],
+    },
+}
+
 GET_GROUP_LIST = {
     "name": "napcat_get_group_list",
     "description": "List the QQ groups the bot account has joined.",
@@ -348,6 +368,7 @@ ALL = [
     SEND_FILE,
     SEND_VIDEO,
     SEND_IMAGE,
+    RECALL_MESSAGE,
     GET_GROUP_LIST,
     GET_GROUP_HISTORY,
     GET_FORWARD_MSG,
