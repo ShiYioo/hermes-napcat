@@ -359,6 +359,24 @@ class NapCatPlatformAdapter(BasePlatformAdapter):
             segments.append({"type": "reply", "data": {"id": str(reply_to)}})
         segments.extend(cq_to_segments(content))
 
+        # Hard guard: never let a message @ the bot's own account. The model
+        # sometimes grabs the only QQ number salient in its context (its own,
+        # from the persona/identity section) when it means to @ the person
+        # who asked a question — producing "@失意酱 ..." replies that make no
+        # sense to humans. Stripping the self-at segment beats guessing which
+        # QQ the model actually meant.
+        self_id = getattr(self.client, "self_id", None)
+        if self_id:
+            before = len(segments)
+            segments = [
+                s for s in segments
+                if not (s.get("type") == "at" and str(s.get("data", {}).get("qq")) == str(self_id))
+            ]
+            if len(segments) != before:
+                logger.warning(
+                    "stripped self-at segment(s) pointing at own account %s", self_id
+                )
+
         try:
             if message_type == "group":
                 data = await self.client.call(

@@ -275,8 +275,14 @@ def get_group_history(args: dict, **kwargs) -> str:
         if not isinstance(messages, list):
             return {"raw": data}
         self_id = _client.self_id
+        # NapCat returns newest-first here; normalize to chronological order
+        # so callers always see oldest -> newest regardless of upstream shape.
+        chronological = sorted(
+            (m for m in messages if isinstance(m, dict)),
+            key=lambda m: int(m.get("time", 0)),
+        )
         out = []
-        for m in messages[-count:]:
+        for m in chronological[-count:]:
             if not isinstance(m, dict):
                 continue
             sender = m.get("sender") or {}
